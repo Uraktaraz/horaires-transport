@@ -2,145 +2,93 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Prochains départs – Crissier, Arc-en-Ciel</title>
-  <meta name="viewport" content="initial-scale=1.0"/>
+  <title>Prochains départs – Crissier Arc-en-Ciel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <link rel="stylesheet" type="text/css" href="https://api3.geo.admin.ch/static/css/extended.min.css"/>
-
-  <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" 
-        rel="stylesheet" 
-        integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" 
-        crossorigin="anonymous">
-
+  <!-- Bibliothèques -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.16.0/moment.min.js"></script>
 
   <style>
-    body {
-      padding: 15px;
-      font-family: Arial, sans-serif;
-    }
-    .chbavhaltestellen-oev .oev-info {
-      height: 24px;
-      margin: 0;
-    }
-    .oev-delay { color: red; }
-    .col-label p {
-      border: 1px solid #D8D8D8;
-      border-radius: 4px;
-      width: 30px;
-      text-align: center;
-    }
-    .col-destination, .col-departures, .col-time-diff, .col-delay {
-      vertical-align: middle !important;
-    }
-    p.oev-info {
-      padding-top: 5px;
-      margin-bottom: 2px;
-    }
+      body { font-family: Arial, sans-serif; margin: 20px; }
+      h1 { margin-bottom: 10px; }
+      table { border-collapse: collapse; width: 100%; max-width: 500px; }
+      td, th { padding: 8px; border-bottom: 1px solid #ddd; text-align: center; }
+      .delay { color: red; }
   </style>
 </head>
 
 <body>
 
-<h3><b>Crissier, Arc-en-Ciel</b> – Prochains départs</h3>
+<h1>Crissier – Arc-en-Ciel</h1>
+<p>Prochains départs :</p>
 
 <table>
-  <tr>
-    <td id="numero8591935" class="col-label"></td>
-    <td id="destination8591935" class="col-destination"></td>
-    <td id="departures8591935" class="col-departures"></td>
-    <td id="timeDiff8591935" class="col-time-diff"></td>
-    <td id="predictableDelay8591935" class="col-delay"></td>
-  </tr>
-  <tr><td colspan="5">&nbsp;</td></tr>
+  <thead>
+    <tr>
+      <th>Ligne</th>
+      <th>Destination</th>
+      <th>Heure</th>
+      <th>Dans</th>
+      <th>Retard</th>
+    </tr>
+  </thead>
+  <tbody id="timetable"></tbody>
 </table>
 
 <script>
-$(document).ready(function() {
-  $.ajaxSetup({ cache: false });
-  var refresh;
-  var id = '8591935';
+function loadDepartures() {
+  // Ajouter un timestamp pour contourner le cache serveur
+  $.getJSON("https://api3.geo.admin.ch/stationboard/stops/8591935?_=" + Date.now(), function(data) {
+      let rows = "";
 
-  var numeroCol = $('#numero' + id);
-  var destinationCol = $('#destination' + id);
-  var departuresCol = $('#departures' + id);
-  var timeDiffCol = $('#timeDiff' + id);
-  var predictableDelayCol = $('#predictableDelay' + id);
+      data.forEach(function(entry) {
+          let now = moment(entry.currentDate);
+          let scheduled = moment(entry.departureDate);
+          let estimated = entry.estimatedDate !== "nodata" ? moment(entry.estimatedDate) : null;
 
-  var timesRun = 0;
+          let finalTime = estimated || scheduled;
 
-  var getInfos = function() {
-    timesRun += 1;
-    if (timesRun === 20) {
-      clearInterval(refresh);
-    }
+          // Ligne
+          let label = entry.label || "-";
+          if (label.length > 3) label = label.substring(0,3);
 
-    $.getJSON('//api3.geo.admin.ch/stationboard/stops/' + id, function(result) {
-      var numero = '';
-      var destination = '';
-      var departures = '';
-      var timeDiff = '';
-      var delay = '';
+          // Heure de départ
+          let time = finalTime.format("HH:mm");
 
-      for (var i = 0; i < result.length; i++) {
-        var now = result[i].currentDate;
-        var then = result[i].departureDate;
-        var estimatedThen = result[i].estimatedDate;
-        var classLate = '';
-        var late = '';
+          // Différence ("dans X minutes")
+          let diffMinutes = Math.floor(finalTime.diff(now, "minutes")) + "′";
 
-        if (estimatedThen !== 'nodata') {
-          classLate = 'oev-delay';
-
-          var lateDiff = moment(estimatedThen,'DD/MM/YYYY HH:mm').diff(moment(then,'DD/MM/YYYY HH:mm'));
-          var lateD = moment.duration(lateDiff);
-          late = '(+' + Math.floor(lateD.asMinutes()) + ')';
-
-          if (late === '(+0)') {
-            late = '';
-            classLate = '';
+          // Retard éventuel
+          let delay = "";
+          if (estimated) {
+              let lateMin = estimated.diff(scheduled, "minutes");
+              if (lateMin > 0) delay = "(+" + lateMin + "′)";
           }
 
-          then = estimatedThen;
-        }
+          rows += `
+            <tr>
+              <td>${label}</td>
+              <td>${entry.destinationName}</td>
+              <td>${time}</td>
+              <td>${diffMinutes}</td>
+              <td class="delay">${delay}</td>
+            </tr>
+          `;
+      });
 
-        var label = result[i].label;
-        if (!label) label = '-';
-        if (label.length > 2) label = label.substr(0, 3);
+      $("#timetable").html(rows);
+  })
+  .fail(function() {
+      $("#timetable").html(
+        `<tr><td colspan="5">Pas de données disponibles.</td></tr>`
+      );
+  });
+}
 
-        var time = moment(then, 'DD/MM/YYYY HH:mm').format('HH:mm');
-
-        var diff = moment(then,'DD/MM/YYYY HH:mm').diff(moment(now,'DD/MM/YYYY HH:mm'));
-        var d = moment.duration(diff);
-        var s = Math.floor(d.asMinutes()) + "'";
-
-        numero += '<p class="oev-info">' + label + '</p>';
-        destination += '<p class="oev-info">' + result[i].destinationName + '</p>';
-        departures += '<p class="oev-info ' + classLate + '">' + time + '</p>';
-        timeDiff += '<p class="oev-info ' + classLate + '"><b>' + s + '</b></p>';
-        delay += '<p class="oev-info oev-delay">' + late + '&nbsp;</p>';
-      }
-
-      numeroCol.html(numero);
-      destinationCol.html(destination);
-      departuresCol.html(departures);
-      timeDiffCol.html(timeDiff);
-      predictableDelayCol.html(delay);
-
-    }).fail(function() {
-      destinationCol.html('<p style="height:24px; margin:0px;">Pas de données disponibles pour cet arrêt</p>');
-    });
-  };
-
-  var Refresh = function() {
-    if (refresh) clearInterval(refresh);
-    getInfos();
-    refresh = setInterval(getInfos, 60000);
-  };
-
-  Refresh();
-});
+// Premier chargement + actualisation toutes les 60 secondes
+loadDepartures();
+setInterval(loadDepartures, 60000);
 </script>
 
 </body>
